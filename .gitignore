@@ -1,1 +1,31 @@
-.ipynb_checkpoints
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.env
+.venv/
+venv/
+
+# Data — never commit raw data to git (too large, no PII risk here but good habit)
+data/raw/
+data/processed/
+
+# Model artefacts — store in DVC or just .gitignore; add manually if small enough
+models/
+*.pkl
+*.joblib
+
+# Logs
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb     # optionally track notebooks — remove this line if you want them versioned
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CDS API key (never commit credentials)
+.cdsapirc
