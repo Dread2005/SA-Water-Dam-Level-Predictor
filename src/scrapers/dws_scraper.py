@@ -2,9 +2,9 @@ import requests, time
 import pandas as pd
 import io
 ### Retrive HTML as txt ###
-def DWS_Data():
+def DWS_Data(url):
     #DWS government link:
-    url = "https://www.dws.gov.za/Hydrology/Weekly/ProvinceWeek.aspx?region=G"
+    url = url
 
     header = {
         "User-Agent":(
@@ -52,4 +52,20 @@ def DWS_Data():
     DWS_table = DWS_panda_table(html_txt)
     Damn_data = DWS_table[4]
     return Damn_data
-print(DWS_Data())
+
+
+def all_dam_data(data):
+    all_dams = []
+
+    for prov_code in ["G", "L", "M", "NW", "FS", "KZN", "EC", "NC", "WC"]:
+        try:
+            url = f"https://www.dws.gov.za/Hydrology/Weekly/ProvinceWeek.aspx?region={prov_code}"
+            print(url)
+            all_dams.append(data(url))
+        
+        except IndexError:
+            continue
+
+    full_df = pd.concat(all_dams, ignore_index=True)
+    full_df.to_csv("src/resources/all_dams_weekly.csv", index=False)
+    

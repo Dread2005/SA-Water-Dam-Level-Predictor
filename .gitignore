@@ -29,3 +29,6 @@ Thumbs.db
 
 # CDS API key (never commit credentials)
 .cdsapirc
+
+# In repair
+notebooks/90-day_rainfall_model.ipynb

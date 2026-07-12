@@ -14,7 +14,7 @@ def document_downloader():
 
         headless = False
         browser = p.chromium.launch(headless=headless)
-
+ 
         #open tab
         page = browser.new_page()
         page.goto(url1)
@@ -33,6 +33,7 @@ def document_downloader():
 
         #Download the pdf
         response = requests.get(pdf_URL, verify=False)
+        
         with open("src/resources/SA-rain-data.pdf", "wb") as file:
             file.write(response.content)
         print("Rain data pdf downloaded")
@@ -59,7 +60,7 @@ def document_downloader():
 
     sa_region = ee.Geometry.Rectangle([16.5, -35.0, 33.0, -22.0])
     chirps = ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
-    rainfall_data = chirps.filterDate("2025-01-01", f"{current_year}-{current_month}-{current_day}").filterBounds(sa_region)
+    rainfall_data = chirps.filterDate("2000-01-01", f"{current_year}-{current_month}-{current_day}").filterBounds(sa_region)
     
     #get Mean rainfall over SA for each image(day)
     def extract_mean(image):
@@ -86,6 +87,8 @@ def document_downloader():
     
     with open("src/resources/rainfall.json", "w", encoding="utf-8") as file:
         json.dump(rainfall_json, file, indent=4)
+    
+    
     # df = pd.DataFrame(values, columns = ["date", "mean_rainfall"])
     # df["date"] = pd.to_datetime(df["date"])
     # df = df.sort_values("date")
