@@ -1,6 +1,6 @@
 # SA Water Dam Level Predictor
 
-> 30 / 60 / 90-day XGBoost forecasts for South African dam storage levels,
+> 30 / 60 / 90-day XGBoost forecasts for South African rain levels in mm with dam points and current dam levels,
 > visualised on an interactive Folium map.
 
 ---
@@ -90,11 +90,11 @@ live column headers.
 ## Roadmap
 
 - [x] Phase 1 — Data ingestion (scraper + CHIRPS downloader)
-- [ ] Phase 2 — Feature engineering (lag features, spatial join to catchments)
-- [ ] Phase 3 — 30-day XGBoost model + baseline comparison
-- [ ] Phase 4 — 60/90-day models + Cape Town 2018 backtest
-- [ ] Phase 5 — Folium interactive map + charts
-- [ ] Phase 6 — Polished notebook + GitHub portfolio write-up
+- [x] Phase 2 — Feature engineering (lag features, spatial join to catchments)
+- [x] Phase 3 — 30-day XGBoost model + baseline comparison
+- [x] Phase 4 — 60/90-day models + Cape Town 2018 backtest
+- [x] Phase 5 — Folium interactive map + charts
+- [ ] Phase 6 —  Restful API intergration + GitHub portfolio write-up
 
 ---
 
