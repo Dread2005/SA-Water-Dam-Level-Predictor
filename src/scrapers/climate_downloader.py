@@ -1,6 +1,7 @@
 from playwright.sync_api import sync_playwright
 import requests
 import ee
+from io import StringIO
 from datetime import date
 from pathlib import Path
 import pandas as pd
@@ -8,35 +9,35 @@ import time
 import json
 
 def document_downloader():
-    url1 = "https://www.weathersa.co.za/home/recentclimate"
-    with sync_playwright() as p:
-        ### -WEATHER SA RAIN DATA- ###
+#     url1 = "https://www.weathersa.co.za/home/recentclimate"
+#     with sync_playwright() as p:
+#         ### -WEATHER SA RAIN DATA- ###
 
-        headless = False
-        browser = p.chromium.launch(headless=headless)
+#         headless = False
+#         browser = p.chromium.launch(headless=headless)
  
-        #open tab
-        page = browser.new_page()
-        page.goto(url1)
+#         #open tab
+#         page = browser.new_page()
+#         page.goto(url1)
 
-        #get daily rainfall data from weather SA
-        with page.context.expect_page() as new_page:
-            page.click("text=Daily Rainfall")
+#         #get daily rainfall data from weather SA
+#         with page.context.expect_page() as new_page:
+#             page.click("text=Daily Rainfall")
         
-        new_page = new_page.value
-        page.wait_for_load_state("networkidle")
+#         new_page = new_page.value
+#         page.wait_for_load_state("networkidle")
 
-        time.sleep(4)
+#         time.sleep(4)
         
-        pdf_URL = new_page.url
-        print(f"PDF URL: {pdf_URL}")
+#         pdf_URL = new_page.url
+#         print(f"PDF URL: {pdf_URL}")
 
-        #Download the pdf
-        response = requests.get(pdf_URL, verify=False)
+#         #Download the pdf
+#         response = requests.get(pdf_URL, verify=False)
         
-        with open("src/resources/SA-rain-data.pdf", "wb") as file:
-            file.write(response.content)
-        print("Rain data pdf downloaded")
+#         with open("src/resources/SA-rain-data.pdf", "wb") as file:
+#             file.write(response.content)
+#         print("Rain data pdf downloaded")
 
     ### NASA CHIRPS DATA- ###
 
@@ -55,7 +56,7 @@ def document_downloader():
     current_day = str(today.day)
     current_month = str(today.month)
     current_year = str(today.year)
-
+    print(today)
     ee.Initialize(project="global-calling-450111-e2")
 
     sa_region = ee.Geometry.Rectangle([16.5, -35.0, 33.0, -22.0])
@@ -87,7 +88,7 @@ def document_downloader():
     
     with open("src/resources/rainfall.json", "w", encoding="utf-8") as file:
         json.dump(rainfall_json, file, indent=4)
-    
+    print("Rain data updated!")
     
     # df = pd.DataFrame(values, columns = ["date", "mean_rainfall"])
     # df["date"] = pd.to_datetime(df["date"])
@@ -97,4 +98,3 @@ def document_downloader():
     # print(df.info())
     # print(df.describe())
 document_downloader()
-

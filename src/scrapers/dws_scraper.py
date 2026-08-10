@@ -54,18 +54,20 @@ def DWS_Data(url):
     return Damn_data
 
 
-def all_dam_data(data):
+def all_dam_data():
     all_dams = []
-
+    count = 0
     for prov_code in ["G", "L", "M", "NW", "FS", "KZN", "EC", "NC", "WC"]:
         try:
             url = f"https://www.dws.gov.za/Hydrology/Weekly/ProvinceWeek.aspx?region={prov_code}"
             print(url)
-            all_dams.append(data(url))
-        
+            # print(all_dams[count])
+            all_dams.append(DWS_Data(url))
+            count += 1
         except IndexError:
             continue
 
     full_df = pd.concat(all_dams, ignore_index=True)
     full_df.to_csv("src/resources/all_dams_weekly.csv", index=False)
-    
+print("Dam data updated")
+all_dam_data()
