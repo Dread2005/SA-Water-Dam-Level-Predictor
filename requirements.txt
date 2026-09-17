@@ -12,4 +12,5 @@ branca
 geopandas
 shapely
 psycopg-binary
+fastapi
 matplotlib
