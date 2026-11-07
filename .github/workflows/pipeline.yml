@@ -1,61 +1,68 @@
 name: Weekly/Daily Pipeline
-
 on:
   schedule:
-    # Every day at 02:00 UTC (adjust to your local time)
     - cron: '0 2 * * *'
-  workflow_dispatch:   # allow manual trigger from the GitHub UI
-
+  workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Refresh mode (offline builds committed data only)'
+        type: choice
+        options: [auto, daily, weekly, offline]
+        default: auto
+permissions:
+  contents: write
+concurrency:
+  group: rainfall-refresh-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     env:
-      # Secrets stored in repo Settings → Secrets → Actions
-      EARTHENGINE_EMAIL: ${{ secrets.EARTHENGINE_EMAIL }}
-      EARTHENGINE_KEY:   ${{ secrets.EARTHENGINE_KEY }}
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          fetch-depth: 0   # we need full history to push back
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
+          python-version: '3.12'
+          cache: pip
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Determine run type (daily vs weekly)
-        id: check_date
-        run: |
-          # If today is Sunday (weekday 0) → weekly run, else daily
-          DAY=$(date +%u)   # 1=Mon … 7=Sun
-          if [ "$DAY" -eq 7 ]; then
-            echo "RUN_TYPE=weekly" >> $GITHUB_OUTPUT
-          else
-            echo "RUN_TYPE=daily" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run orchestrator (passing run type)
-        run: |
-          python orchestrator/run_pipeline.py ${{ steps.check_date.outputs.RUN_TYPE }}
+        run: python -m pip install -r requirements.txt
+      - name: Determine run type
+        id: mode
         env:
-          PYTHONUNBUFFERED: 1   # ensure logs appear in real time
-
-      - name: Commit and push updated data/maps
-        # Only commit if there are changes
+          REQUESTED: ${{ inputs.run_type }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/ processed/ models/ maps/ || true
-          if ! git diff --cached --quiet; then
-            git commit -m "🤖 Automated pipeline update: ${{ steps.check_date.outputs.RUN_TYPE }} run"
-            git push
-          else
-            echo "No changes to commit."
+          MODE="${REQUESTED:-auto}"
+          if [ "$MODE" = auto ]; then
+            if [ "$(date -u +%u)" = 7 ]; then MODE=weekly; else MODE=daily; fi
           fi
-
+          case "$MODE" in daily|weekly|offline) ;; *) exit 1 ;; esac
+          echo "value=$MODE" >> "$GITHUB_OUTPUT"
+      - name: Refresh and build
+        env:
+          EARTHENGINE_EMAIL: ${{ secrets.EARTHENGINE_EMAIL }}
+          EARTHENGINE_KEY: ${{ secrets.EARTHENGINE_KEY }}
+          EARTHENGINE_PROJECT: ${{ vars.EARTHENGINE_PROJECT || 'global-calling-450111-e2' }}
+          RUN_TYPE: ${{ steps.mode.outputs.value }}
+        run: python orchestrator/run_pipeline.py "$RUN_TYPE"
+      - name: Upload deployable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rainfall-outputs-${{ github.run_id }}
+          path: |
+            models/
+            maps/
+            data/processed/
+          if-no-files-found: error
+      - name: Commit refreshed source inputs
+        if: github.ref == 'refs/heads/main' && steps.mode.outputs.value != 'offline'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/resources/rainfall.json src/resources/all_dams_weekly.csv
+          if ! git diff --cached --quiet; then
+            git commit -m 'Refresh rainfall and dam source inputs'
+            git push origin HEAD:main
+          fi
