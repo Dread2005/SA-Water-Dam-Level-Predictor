@@ -12,7 +12,7 @@ data/raw/
 data/processed/
 
 # Model artefacts — store in DVC or just .gitignore; add manually if small enough
-models/
+/models/
 *.pkl
 *.joblib
 
