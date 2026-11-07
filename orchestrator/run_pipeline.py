@@ -1,113 +1,72 @@
 #!/usr/bin/env python
-"""
-Orchestrator for the SA‑Water‑Rainfall pipeline.
-Calls existing scrapers, notebooks, and scripts in the strict sequence:
-  scraper → EDA → feature engineering → Folium map generation
+"""Reproducible rainfall pipeline.
 
-Usage:
-    python orchestrator/run_pipeline.py <RUN_TYPE>
-where RUN_TYPE is either "daily" or "weekly".
+``offline`` rebuilds everything from committed inputs without network access.
+``daily``/``weekly`` first execute the existing live collectors, then rebuild;
+they fail rather than opening an interactive credential prompt when Earth Engine
+credentials are absent.
 """
+from __future__ import annotations
 
-import sys
+import argparse
+import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
-def run_cmd(cmd: list[str], desc: str):
-    """Run a command, print its stdout/stderr, and raise on failure."""
-    print(f"\n=== {desc} ===")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
-    if result.returncode != 0:
-        raise RuntimeError(f"{desc} failed with exit code {result.returncode}")
-    return result
+ROOT = Path(__file__).resolve().parents[1]
+# Running this file directly puts ``orchestrator/`` on sys.path, not the repo.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def main(run_type: str):
-    repo_root = Path(__file__).resolve().parents[1]
 
-   
-    if run_type == "daily":
-        # Daily rainfall scraper only
-        run_cmd(
-            [sys.executable, "src/scrapers/climate_downloader.py"],
-            "Running daily rainfall scraper (Weather SA)"
+def run_live(run_type: str) -> None:
+    """Run collectors only when one supported non-interactive EE auth route exists."""
+    credentials = Path.home() / ".config" / "earthengine" / "credentials"
+    service_account = bool(os.environ.get("EARTHENGINE_EMAIL") and os.environ.get("EARTHENGINE_KEY"))
+    json_service_account = bool(os.environ.get("EARTHENGINE_CREDENTIALS"))
+    if not credentials.is_file() and not service_account and not json_service_account:
+        raise RuntimeError(
+            "Live refresh requires non-interactive Earth Engine credentials: set "
+            "EARTHENGINE_EMAIL with EARTHENGINE_KEY, EARTHENGINE_CREDENTIALS, "
+            "or configure a local EE credential cache. Run `python orchestrator/run_pipeline.py offline` "
+            "to use committed inputs."
         )
-        # NOTE: The weekly dam scraper is *not* run on daily runs
-    elif run_type == "weekly":
-        # Weekly dam scraper *plus* the daily rainfall scraper
-        # (you said strict sequence: daily → weekly → …, so we run both)
-        run_cmd(
-            [sys.executable, "src/scrapers/climate_downloader.py"],
-            "Running daily rainfall scraper (Weather SA)"
-        )
-        run_cmd(
-            [sys.executable, "src/scrapers/dws_scraper.py"],
-            "Running weekly dam scraper (DWS)"
-        )
-    else:
-        raise ValueError(f"Unknown RUN_TYPE: {run_type!r}")
-
-    # We use nbconvert to execute the notebook and write the outputs
-    # to the same locations your notebook expects.
-    run_cmd(
-        [
-            sys.executable, "-m", "nbconvert",
-            "--to", "notebook",
-            "--execute",
-            "--output", "01_eda_and_features_executed.ipynb",
-            "--ExecutePreprocessor.timeout=600",
-            "notebooks/01_eda_and_features.ipynb"
-        ],
-        "Executing EDA notebook (01_eda_and_features.ipynb)"
-    )
-    # Optionally rename the executed notebook back to the original name
-    # if downstream steps rely on the exact filename.
-    (repo_root / "notebooks" / "01_eda_and_features.ipynb").write_text(
-        (repo_root / "01_eda_and_features_executed.ipynb").read_text()
-    )
-    (repo_root / "01_eda_and_features_executed.ipynb").unlink(missing_ok=True)
+    commands = [[sys.executable, "src/scrapers/climate_downloader.py"]]
+    if run_type == "weekly":
+        commands.append([sys.executable, "src/scrapers/dws_scraper.py"])
+    for command in commands:
+        subprocess.run(command, cwd=ROOT, check=True)
 
 
-    # Adjust the path/module name to match your actual entry‑point.
-    run_cmd(
-        [sys.executable, "-m", "src.features.engineer"],
-        "Running feature‑engineering script"
-    )
+def build() -> dict:
+    from src.features.engineer import build_from_json
+    from src.models.train import predict_latest, train_all
+    from src.viz.forecast_maps import matched_dams, write_forecast_map
+
+    features = build_from_json(ROOT / "src/resources/rainfall.json", ROOT / "data/feature_engineered/engineered_data.csv")
+    metrics = train_all(features, ROOT / "models")
+    predictions = predict_latest(features, ROOT / "models")
+    prediction_path = ROOT / "data/processed/latest_predictions.json"
+    prediction_path.parent.mkdir(parents=True, exist_ok=True)
+    prediction_path.write_text(json.dumps(predictions, indent=2), encoding="utf-8")
+    dams = matched_dams(ROOT / "src/resources/all_dams_weekly.csv", ROOT / "src/resources/african_dams-African Dams.csv")
+    for horizon in (30, 60):
+        write_forecast_map(dams, predictions, horizon, ROOT / "maps" / f"forecast_{horizon}d.html")
+    return {"feature_rows": len(features), "mapped_dams": len(dams), "metrics": {str(k): vars(v) for k, v in metrics.items()}, "prediction_path": str(prediction_path)}
 
 
-    # You already have code that creates the maps; we expose it via a
-    # small helper script or call the notebook directly.
-    # Example using the existing notebook (adjust as needed):
-    run_cmd(
-        [
-            sys.executable, "-m", "nbconvert",
-            "--to", "html",
-            "--output", "maps/forecast_30d.html",
-            "--ExecutePreprocessor.timeout=600",
-            "notebooks/folium_map.ipynb"   # <-- your map notebook
-        ],
-        "Generating 30‑day Folium map"
-    )
-    run_cmd(
-        [
-            sys.executable, "-m", "nbconvert",
-            "--to", "html",
-            "--output", "maps/forecast_60d.html",
-            "--ExecutePreprocessor.timeout=600",
-            "notebooks/folium_map_60.ipynb"   # if you have a separate 60‑day notebook
-            # If you use the same notebook with a parameter, you could pass
-            # an environment variable or modify the notebook call accordingly.
-        ],
-        "Generating 60‑day Folium map"
-    )
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build country-level rainfall models and visualizations.")
+    parser.add_argument("run_type", choices=("offline", "daily", "weekly"), help="offline uses committed data; daily/weekly refresh live inputs first")
+    args = parser.parse_args(argv)
+    if args.run_type != "offline":
+        run_live(args.run_type)
+    summary = build()
+    print(json.dumps(summary, indent=2))
+    return 0
 
-    print("\n Pipeline completed successfully for", run_type, "run")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python orchestrator/run_pipeline.py <daily|weekly>")
-        sys.exit(1)
-    main(sys.argv[1].lower())
+    raise SystemExit(main())
